@@ -41,3 +41,14 @@ app-example
 # generated native folders
 /ios
 /android
+
+# local env files
+.env
+.env.*
+!.env.example
+
+# backup / test files
+*.zip
+
+# editor
+.vscode/
