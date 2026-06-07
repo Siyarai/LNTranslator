@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import type { Novel, Chapter } from '../types/novel';
+import type { GlossaryEntry } from '../types/glossary';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -40,6 +41,20 @@ export async function initDatabase(): Promise<void> {
       position REAL,
       FOREIGN KEY (novelId) REFERENCES novels(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS glossary_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      novelId INTEGER NOT NULL,
+      sourceText TEXT NOT NULL,
+      targetText TEXT NOT NULL,
+      isActive INTEGER DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (novelId) REFERENCES novels(id) ON DELETE CASCADE,
+      UNIQUE(novelId, sourceText)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_glossary_novelId_isActive
+      ON glossary_entries(novelId, isActive);
   `);
 
   // ── Schema migrations for existing databases ─────────────────
@@ -354,4 +369,114 @@ export async function getChapterProgress(
   } catch {
     return { original: 0, translated: 0 };
   }
+}
+
+// ─── Glossary CRUD ────────────────────────────────────────────
+
+export async function getGlossaryEntries(
+  novelId: number
+): Promise<GlossaryEntry[]> {
+  const rows = await getDb().getAllAsync<{
+    id: number;
+    novelId: number;
+    sourceText: string;
+    targetText: string;
+    isActive: number;
+    createdAt: string;
+  }>(
+    'SELECT * FROM glossary_entries WHERE novelId = ? ORDER BY length(sourceText) DESC',
+    [novelId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    novelId: r.novelId,
+    sourceText: r.sourceText,
+    targetText: r.targetText,
+    isActive: r.isActive,
+    createdAt: r.createdAt,
+  }));
+}
+
+export async function getActiveGlossaryEntries(
+  novelId: number
+): Promise<GlossaryEntry[]> {
+  const rows = await getDb().getAllAsync<{
+    id: number;
+    novelId: number;
+    sourceText: string;
+    targetText: string;
+    isActive: number;
+    createdAt: string;
+  }>(
+    'SELECT * FROM glossary_entries WHERE novelId = ? AND isActive = 1 ORDER BY length(sourceText) DESC',
+    [novelId]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    novelId: r.novelId,
+    sourceText: r.sourceText,
+    targetText: r.targetText,
+    isActive: r.isActive,
+    createdAt: r.createdAt,
+  }));
+}
+
+export async function addGlossaryEntry(data: {
+  novelId: number;
+  sourceText: string;
+  targetText: string;
+}): Promise<number> {
+  const result = await getDb().runAsync(
+    'INSERT INTO glossary_entries (novelId, sourceText, targetText, isActive, createdAt) VALUES (?, ?, ?, 1, ?)',
+    [data.novelId, data.sourceText, data.targetText, new Date().toISOString()]
+  );
+  return result.lastInsertRowId;
+}
+
+export async function updateGlossaryEntry(
+  id: number,
+  partial: Partial<Pick<GlossaryEntry, 'sourceText' | 'targetText' | 'isActive'>>
+): Promise<void> {
+  const setClauses: string[] = [];
+  const values: (string | number)[] = [];
+
+  if (partial.sourceText !== undefined) {
+    setClauses.push('sourceText = ?');
+    values.push(partial.sourceText);
+  }
+  if (partial.targetText !== undefined) {
+    setClauses.push('targetText = ?');
+    values.push(partial.targetText);
+  }
+  if (partial.isActive !== undefined) {
+    setClauses.push('isActive = ?');
+    values.push(partial.isActive);
+  }
+
+  if (setClauses.length === 0) return;
+
+  await getDb().runAsync(
+    `UPDATE glossary_entries SET ${setClauses.join(', ')} WHERE id = ?`,
+    [...values, id]
+  );
+}
+
+export async function deleteGlossaryEntry(id: number): Promise<void> {
+  await getDb().runAsync('DELETE FROM glossary_entries WHERE id = ?', [id]);
+}
+
+export async function bulkInsertGlossaryEntries(
+  novelId: number,
+  entries: Array<{ sourceText: string; targetText: string }>
+): Promise<void> {
+  if (entries.length === 0) return;
+  const db = getDb();
+  await db.withTransactionAsync(async () => {
+    for (const entry of entries) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO glossary_entries (novelId, sourceText, targetText, isActive, createdAt) VALUES (?, ?, ?, 1, ?)',
+        [novelId, entry.sourceText, entry.targetText, new Date().toISOString()]
+      );
+    }
+  });
 }

@@ -1,9 +1,12 @@
 import axios from "axios";
 import {
   getChapterById,
+  getActiveGlossaryEntries,
   updateChapterTranslation,
 } from "../db/database";
 import { chunkText } from "../utils/chunkText";
+import { applyGlossaryToText, restoreGlossaryFromText } from "../utils/glossary";
+import type { GlossaryEntry } from "../types/glossary";
 
 const DEEPL_ENDPOINT = "https://api-free.deepl.com/v2/translate";
 
@@ -61,7 +64,15 @@ export async function translateChapter(
     return chapter.translatedText;
   }
 
-  const chunks = chunkText(fullText);
+  let glossaryEntries: GlossaryEntry[] = [];
+  try {
+    glossaryEntries = chapter ? await getActiveGlossaryEntries(chapter.novelId) : [];
+  } catch (err: any) {
+    console.warn('[Glossary] Failed to load glossary entries, proceeding without glossary:', err?.message);
+  }
+  const { processedText, usedEntries } = applyGlossaryToText(fullText, glossaryEntries);
+
+  const chunks = chunkText(processedText);
   const translatedChunks: string[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
@@ -71,7 +82,8 @@ export async function translateChapter(
     translatedChunks.push(translated);
   }
 
-  const fullTranslation = translatedChunks.join("\n\n");
+  const joined = translatedChunks.join("\n\n");
+  const fullTranslation = restoreGlossaryFromText(joined, usedEntries);
 
   await updateChapterTranslation(chapterId, fullTranslation);
 
@@ -87,7 +99,17 @@ export async function forceTranslateChapter(
   fullText: string,
   onProgress?: (current: number, total: number) => void
 ): Promise<string> {
-  const chunks = chunkText(fullText);
+  const chapter = await getChapterById(chapterId);
+
+  let glossaryEntries: GlossaryEntry[] = [];
+  try {
+    glossaryEntries = chapter ? await getActiveGlossaryEntries(chapter.novelId) : [];
+  } catch (err: any) {
+    console.warn('[Glossary] Failed to load glossary entries, proceeding without glossary:', err?.message);
+  }
+  const { processedText, usedEntries } = applyGlossaryToText(fullText, glossaryEntries);
+
+  const chunks = chunkText(processedText);
   const translatedChunks: string[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
@@ -97,7 +119,8 @@ export async function forceTranslateChapter(
     translatedChunks.push(translated);
   }
 
-  const fullTranslation = translatedChunks.join("\n\n");
+  const joined = translatedChunks.join("\n\n");
+  const fullTranslation = restoreGlossaryFromText(joined, usedEntries);
 
   await updateChapterTranslation(chapterId, fullTranslation);
 
