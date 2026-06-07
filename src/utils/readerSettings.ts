@@ -12,6 +12,8 @@ export interface ReaderSettings {
   theme: ThemeName;
   fullScreen: boolean;
   horizontalPadding: number;
+  autoPrefetchEnabled: boolean;
+  prefetchCount: number;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -21,6 +23,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   theme: 'Dark',
   fullScreen: false,
   horizontalPadding: 20,
+  autoPrefetchEnabled: true,
+  prefetchCount: 2,
 };
 
 // ─── Theme color palettes ─────────────────────────────────────────────────────

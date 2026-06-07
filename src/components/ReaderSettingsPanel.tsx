@@ -271,6 +271,64 @@ export default function ReaderSettingsPanel() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── Auto Prefetch Toggle ── */}
+      <View style={p.section}>
+        <TouchableOpacity
+          style={p.toggleRow}
+          onPress={() => update('autoPrefetchEnabled', !settings.autoPrefetchEnabled)}
+        >
+          <Text style={p.label}>Sonraki bölümleri otomatik çevir</Text>
+          <View
+            style={[
+              p.toggleTrack,
+              settings.autoPrefetchEnabled && p.toggleTrackOn,
+            ]}
+          >
+            <View
+              style={[
+                p.toggleThumb,
+                settings.autoPrefetchEnabled && p.toggleThumbOn,
+              ]}
+            />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Prefetch Count Stepper (only when enabled) ── */}
+      {settings.autoPrefetchEnabled && (
+        <View style={p.section}>
+          <Text style={p.label}>
+            Kaç bölüm önden çevrilsin: {settings.prefetchCount}
+          </Text>
+          <View style={p.stepperRow}>
+            <TouchableOpacity
+              style={p.stepperBtn}
+              onPress={() =>
+                update('prefetchCount', Math.max(1, settings.prefetchCount - 1))
+              }
+            >
+              <Text style={p.stepperBtnText}>−</Text>
+            </TouchableOpacity>
+            <View style={p.stepperTrack}>
+              <View
+                style={[
+                  p.stepperFill,
+                  { width: `${((settings.prefetchCount - 1) / (5 - 1)) * 100}%` },
+                ]}
+              />
+            </View>
+            <TouchableOpacity
+              style={p.stepperBtn}
+              onPress={() =>
+                update('prefetchCount', Math.min(5, settings.prefetchCount + 1))
+              }
+            >
+              <Text style={p.stepperBtnText}>+</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

@@ -14,11 +14,21 @@ import {
 } from 'react-native';
 import {
   clearChapterTranslation,
+  getChapterById,
   getChaptersByNovelId,
   getNovelById,
   updateLastReadChapter,
 } from '../../../src/db/database';
 import { getChapterContent } from '../../../src/services/chapterService';
+import {
+  enqueue as enqueueForPrefetch,
+  getStatus as getQueueStatus,
+  isInFlight,
+  isPending,
+  promote,
+  subscribe as subscribeToQueue,
+} from '../../../src/services/prefetchQueue';
+import type { QueueItem } from '../../../src/services/prefetchQueue';
 import { forceTranslateChapter, translateChapter } from '../../../src/services/translationService';
 import type { Chapter, Novel } from '../../../src/types/novel';
 import {
@@ -92,6 +102,11 @@ export default function ReaderScreen() {
   const [allChapters, setAllChapters] = useState<Chapter[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
 
+  // Prefetch queue
+  const translateWaitUnsub = useRef<(() => void) | null>(null);
+  const [prefetchActive, setPrefetchActive] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
   // Load persisted settings once
   useEffect(() => {
     loadReaderSettings().then(setSettings);
@@ -116,6 +131,10 @@ export default function ReaderScreen() {
   }, [chapterId]);
 
   const loadChapter = async () => {
+    // Clear any pending queue subscription from previous chapter
+    translateWaitUnsub.current?.();
+    translateWaitUnsub.current = null;
+
     try {
       setLoading(true);
       setTranslatedContent(null);
@@ -152,6 +171,26 @@ export default function ReaderScreen() {
       setAllChapters(chapters);
       const idx = chapters.findIndex((c) => c.id === cId);
       setCurrentIndex(idx);
+
+      // Prefetch N+1…N+prefetchCount if auto-prefetch is enabled
+      if (settings.autoPrefetchEnabled && idx >= 0) {
+        const prefetchItems: QueueItem[] = [];
+        for (let i = 1; i <= settings.prefetchCount; i++) {
+          const ti = idx + i;
+          if (ti >= chapters.length) break;
+          const t = chapters[ti];
+          if (t.originalText && !t.isTranslated) {
+            prefetchItems.push({
+              chapterId: t.id,
+              novelId: nId,
+              chapterIndex: ti,
+              text: t.originalText,
+              priority: 'normal',
+            });
+          }
+        }
+        if (prefetchItems.length > 0) enqueueForPrefetch(prefetchItems, nId, idx);
+      }
 
       // Load persisted reader state (language + progress)
       const state = await loadReaderState(cId);
@@ -191,11 +230,9 @@ export default function ReaderScreen() {
     if (translatedContent) {
       const next = !showTranslation;
       setShowTranslation(next);
-      // Save language preference
       readerState.current.lastLanguage = next ? 'translated' : 'original';
       const cId = parseInt(chapterId, 10);
       if (!isNaN(cId)) saveReaderState(cId, readerState.current);
-      // Restore progress for the target view
       const pct = next
         ? (readerState.current.translatedProgress || readerState.current.originalProgress)
         : (readerState.current.originalProgress || readerState.current.translatedProgress);
@@ -207,20 +244,59 @@ export default function ReaderScreen() {
       return;
     }
 
+    const cId = parseInt(chapterId, 10);
+    if (isNaN(cId)) return;
+
+    // Queue path: chapter is in-flight or pending in prefetch queue
+    if (isInFlight(cId) || isPending(cId)) {
+      if (isPending(cId)) promote(cId);
+
+      setTranslating(true);
+      setTranslationProgress('Çevriliyor…');
+
+      translateWaitUnsub.current?.();
+      translateWaitUnsub.current = subscribeToQueue((event) => {
+        if (event.type === 'progress' && event.chapterId === cId) {
+          setTranslationProgress(`Translating ${event.current}/${event.total}`);
+        } else if (event.type === 'done' && event.chapterId === cId) {
+          translateWaitUnsub.current?.();
+          translateWaitUnsub.current = null;
+          getChapterById(cId)
+            .then((ch) => {
+              if (ch?.translatedText) {
+                setTranslatedContent(ch.translatedText);
+                setShowTranslation(true);
+                readerState.current.lastLanguage = 'translated';
+                saveReaderState(cId, readerState.current);
+                scrollRef.current?.scrollTo({ y: 0, animated: true });
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              setTranslating(false);
+              setTranslationProgress('');
+            });
+        } else if (event.type === 'error' && event.chapterId === cId) {
+          translateWaitUnsub.current?.();
+          translateWaitUnsub.current = null;
+          Alert.alert('Translation Error', event.message || 'Translation failed.');
+          setTranslating(false);
+          setTranslationProgress('');
+        }
+      });
+      return;
+    }
+
+    // Direct path: not in queue, translate immediately
     try {
       setTranslating(true);
-      const result = await translateChapter(
-        parseInt(chapterId, 10),
-        content,
-        (current, total) => {
-          setTranslationProgress(`Translating ${current}/${total}`);
-        }
-      );
+      const result = await translateChapter(cId, content, (current, total) => {
+        setTranslationProgress(`Translating ${current}/${total}`);
+      });
       setTranslatedContent(result);
       setShowTranslation(true);
       readerState.current.lastLanguage = 'translated';
-      const cId = parseInt(chapterId, 10);
-      if (!isNaN(cId)) saveReaderState(cId, readerState.current);
+      saveReaderState(cId, readerState.current);
       scrollRef.current?.scrollTo({ y: 0, animated: true });
     } catch (err: any) {
       Alert.alert(
@@ -375,11 +451,33 @@ export default function ReaderScreen() {
     }
   }, [showTranslation, loading, attemptScrollRestore]);
 
-  // Cleanup timers on unmount
+  // Queue status subscription — tracks prefetch activity and quota events
+  useEffect(() => {
+    const unsub = subscribeToQueue((event) => {
+      if (event.type === 'quota_exceeded') {
+        setQuotaExceeded(true);
+      }
+      if (
+        event.type === 'progress' ||
+        event.type === 'done' ||
+        event.type === 'pause' ||
+        event.type === 'resume' ||
+        event.type === 'error'
+      ) {
+        const status = getQueueStatus();
+        setPrefetchActive(status.current !== null && !status.paused);
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Cleanup timers and queue subscriptions on unmount
   useEffect(() => {
     return () => {
       if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
       if (restoreTimer.current) clearTimeout(restoreTimer.current);
+      translateWaitUnsub.current?.();
+      translateWaitUnsub.current = null;
     };
   }, []);
 
@@ -516,6 +614,28 @@ export default function ReaderScreen() {
             <Text style={[styles.translatingBarText, { color: themeColors.textSecondary }]}>
               {translationProgress || 'Translating...'}
             </Text>
+          </View>
+        )}
+
+        {/* Prefetch indicator — shown when queue is translating a next chapter */}
+        {uiVisible && prefetchActive && !translating && (
+          <View style={[styles.prefetchBar, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={[styles.prefetchBarText, { color: themeColors.textSecondary }]}>
+              Sonraki bölüm hazırlanıyor…
+            </Text>
+          </View>
+        )}
+
+        {/* Quota exceeded banner — dismissible, sticky */}
+        {quotaExceeded && (
+          <View style={styles.quotaBanner}>
+            <Text style={styles.quotaBannerText}>
+              ⚠ DeepL kotası doldu. Otomatik çeviri duraklatıldı.
+            </Text>
+            <TouchableOpacity onPress={() => setQuotaExceeded(false)} hitSlop={8}>
+              <Text style={styles.quotaBannerDismiss}>✕</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1372,6 +1492,39 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     fontStyle: 'italic',
+  },
+  prefetchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+  },
+  prefetchBarText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+  },
+  quotaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7F3B08',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#92400E',
+  },
+  quotaBannerText: {
+    flex: 1,
+    color: '#FEF3C7',
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  quotaBannerDismiss: {
+    color: '#FDE68A',
+    fontSize: 16,
+    fontWeight: '700' as const,
   },
   // ── Bottom bar ──
   bottomBar: {
