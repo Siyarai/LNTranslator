@@ -172,10 +172,12 @@ export default function ReaderScreen() {
       const idx = chapters.findIndex((c) => c.id === cId);
       setCurrentIndex(idx);
 
-      // Prefetch N+1…N+prefetchCount if auto-prefetch is enabled
-      if (settings.autoPrefetchEnabled && idx >= 0) {
+      // Read fresh settings from storage — avoids using stale state if
+      // AsyncStorage hasn't resolved yet when loadChapter first runs.
+      const freshSettings = await loadReaderSettings();
+      if (freshSettings.autoPrefetchEnabled && idx >= 0) {
         const prefetchItems: QueueItem[] = [];
-        for (let i = 1; i <= settings.prefetchCount; i++) {
+        for (let i = 1; i <= freshSettings.prefetchCount; i++) {
           const ti = idx + i;
           if (ti >= chapters.length) break;
           const t = chapters[ti];
@@ -456,6 +458,10 @@ export default function ReaderScreen() {
     const unsub = subscribeToQueue((event) => {
       if (event.type === 'quota_exceeded') {
         setQuotaExceeded(true);
+      }
+      if (event.type === 'done') {
+        // Successful translation means quota is working — clear any stale banner
+        setQuotaExceeded(false);
       }
       if (
         event.type === 'progress' ||
