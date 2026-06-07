@@ -41,6 +41,7 @@ const inFlight = new Set<number>();
 const pauseReasons = new Set<PauseReason>();
 const listeners = new Set<(e: QueueEvent) => void>();
 const retryCount = new Map<number, number>();
+const retryTimers = new Map<number, ReturnType<typeof setTimeout>>();
 let isProcessing = false;
 let rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -92,10 +93,15 @@ function handleError(err: any, item: QueueItem): void {
         `[PrefetchQueue] Chapter ${item.chapterId} transient error (attempt ${attempts}), retrying in ${delay}ms`
       );
       retryCount.set(item.chapterId, attempts);
-      setTimeout(() => {
+      // Cancel any existing retry timer before setting a new one
+      const existing = retryTimers.get(item.chapterId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        retryTimers.delete(item.chapterId);
         queue.unshift(item);
         startProcessing();
       }, delay);
+      retryTimers.set(item.chapterId, timer);
       return;
     }
     console.log(
@@ -201,16 +207,25 @@ export function enqueue(
 
 export function cancel(chapterId: number): void {
   const idx = queue.findIndex((item) => item.chapterId === chapterId);
-  if (idx !== -1) {
-    queue.splice(idx, 1);
-    retryCount.delete(chapterId);
+  if (idx !== -1) queue.splice(idx, 1);
+  retryCount.delete(chapterId);
+  const timer = retryTimers.get(chapterId);
+  if (timer) {
+    clearTimeout(timer);
+    retryTimers.delete(chapterId);
   }
 }
 
 export function cancelAllForNovel(novelId: number): void {
   for (let i = queue.length - 1; i >= 0; i--) {
     if (queue[i].novelId === novelId) {
-      retryCount.delete(queue[i].chapterId);
+      const { chapterId } = queue[i];
+      retryCount.delete(chapterId);
+      const timer = retryTimers.get(chapterId);
+      if (timer) {
+        clearTimeout(timer);
+        retryTimers.delete(chapterId);
+      }
       queue.splice(i, 1);
     }
   }
@@ -273,7 +288,7 @@ export function subscribe(listener: (e: QueueEvent) => void): () => void {
 // ─── AppState listener ────────────────────────────────────────────────────────
 
 AppState.addEventListener('change', (state) => {
-  if (state === 'background' || state === 'inactive') {
+  if (state === 'background') {
     pause('app_background');
   } else if (state === 'active') {
     resume('app_background');
