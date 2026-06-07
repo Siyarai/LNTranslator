@@ -468,15 +468,23 @@ export async function deleteGlossaryEntry(id: number): Promise<void> {
 export async function bulkInsertGlossaryEntries(
   novelId: number,
   entries: Array<{ sourceText: string; targetText: string }>
-): Promise<void> {
-  if (entries.length === 0) return;
+): Promise<{ inserted: number; skipped: number }> {
+  if (entries.length === 0) return { inserted: 0, skipped: 0 };
   const db = getDb();
+  let inserted = 0;
+  let skipped = 0;
   await db.withTransactionAsync(async () => {
     for (const entry of entries) {
-      await db.runAsync(
+      const result = await db.runAsync(
         'INSERT OR IGNORE INTO glossary_entries (novelId, sourceText, targetText, isActive, createdAt) VALUES (?, ?, ?, 1, ?)',
         [novelId, entry.sourceText, entry.targetText, new Date().toISOString()]
       );
+      if (result.changes > 0) {
+        inserted++;
+      } else {
+        skipped++;
+      }
     }
   });
+  return { inserted, skipped };
 }

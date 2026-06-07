@@ -124,6 +124,15 @@ export default function NovelDetailScreen() {
         options={{
           title: novel?.title || 'Novel',
           headerBackTitle: 'Library',
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push(`/glossary/${id}` as any)}
+              activeOpacity={0.7}
+              style={{ marginRight: 4, padding: 4 }}
+            >
+              <Text style={{ fontSize: 20 }}>📝</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
       <View style={styles.container}>
