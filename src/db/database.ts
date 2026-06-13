@@ -55,6 +55,37 @@ export async function initDatabase(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_glossary_novelId_isActive
       ON glossary_entries(novelId, isActive);
+
+    CREATE TABLE IF NOT EXISTS characters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      novelId INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      aliases TEXT,
+      description TEXT,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (novelId) REFERENCES novels(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_characters_novel ON characters(novelId);
+
+    CREATE TABLE IF NOT EXISTS character_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      characterId INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      caption TEXT,
+      sortOrder INTEGER DEFAULT 0,
+      FOREIGN KEY (characterId) REFERENCES characters(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_character_images_char ON character_images(characterId, sortOrder);
+
+    CREATE TABLE IF NOT EXISTS character_attributes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      characterId INTEGER NOT NULL,
+      attrKey TEXT NOT NULL,
+      attrValue TEXT NOT NULL,
+      sortOrder INTEGER DEFAULT 0,
+      FOREIGN KEY (characterId) REFERENCES characters(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_character_attributes_char ON character_attributes(characterId, sortOrder);
   `);
 
   // ── Schema migrations for existing databases ─────────────────
@@ -79,6 +110,11 @@ export async function initDatabase(): Promise<void> {
 }
 
 function getDb(): SQLite.SQLiteDatabase {
+  if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
+  return db;
+}
+
+export function getDbInstance(): SQLite.SQLiteDatabase {
   if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
   return db;
 }
