@@ -40,7 +40,10 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      ["expo-image-picker", {
+        "photosPermission": "LNTranslator, karakter resmi eklemek için fotoğraflara erişmek istiyor."
+      }]
     ],
     "experiments": {
       "typedRoutes": true,
