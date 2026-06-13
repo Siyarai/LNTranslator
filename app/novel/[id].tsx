@@ -125,13 +125,22 @@ export default function NovelDetailScreen() {
           title: novel?.title || 'Novel',
           headerBackTitle: 'Library',
           headerRight: () => (
-            <TouchableOpacity
-              onPress={() => router.push(`/glossary/${id}` as any)}
-              activeOpacity={0.7}
-              style={{ marginRight: 4, padding: 4 }}
-            >
-              <Text style={{ fontSize: 20 }}>📝</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: 4 }}>
+              <TouchableOpacity
+                onPress={() => router.push(`/characters/${id}` as any)}
+                activeOpacity={0.7}
+                style={{ padding: 4 }}
+              >
+                <Text style={{ fontSize: 20 }}>👥</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push(`/glossary/${id}` as any)}
+                activeOpacity={0.7}
+                style={{ padding: 4 }}
+              >
+                <Text style={{ fontSize: 20 }}>📝</Text>
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
