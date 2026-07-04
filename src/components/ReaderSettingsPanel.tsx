@@ -246,7 +246,7 @@ export default function ReaderSettingsPanel() {
           <TouchableOpacity
             style={p.stepperBtn}
             onPress={() =>
-              update('horizontalPadding', Math.max(12, settings.horizontalPadding - 2))
+              update('horizontalPadding', Math.max(12, settings.horizontalPadding - 4))
             }
           >
             <Text style={p.stepperBtnText}>−</Text>
@@ -256,7 +256,7 @@ export default function ReaderSettingsPanel() {
               style={[
                 p.stepperFill,
                 {
-                  width: `${((settings.horizontalPadding - 12) / (36 - 12)) * 100}%`,
+                  width: `${((settings.horizontalPadding - 12) / (120 - 12)) * 100}%`,
                 },
               ]}
             />
@@ -264,11 +264,39 @@ export default function ReaderSettingsPanel() {
           <TouchableOpacity
             style={p.stepperBtn}
             onPress={() =>
-              update('horizontalPadding', Math.min(36, settings.horizontalPadding + 2))
+              update('horizontalPadding', Math.min(120, settings.horizontalPadding + 4))
             }
           >
             <Text style={p.stepperBtnText}>+</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ── Content Width ── */}
+      <View style={p.section}>
+        <Text style={p.label}>İçerik Genişliği</Text>
+        <View style={[p.chipRow, { marginBottom: 8 }]}>
+          <TouchableOpacity
+            style={[p.chip, settings.maxContentWidth === 0 && p.chipActive]}
+            onPress={() => update('maxContentWidth', 0)}
+          >
+            <Text style={[p.chipText, settings.maxContentWidth === 0 && p.chipTextActive]}>
+              Sınırsız
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <View style={p.chipRow}>
+          {([600, 700, 800, 900] as const).map((w) => (
+            <TouchableOpacity
+              key={w}
+              style={[p.chip, settings.maxContentWidth === w && p.chipActive]}
+              onPress={() => update('maxContentWidth', w)}
+            >
+              <Text style={[p.chipText, settings.maxContentWidth === w && p.chipTextActive]}>
+                {w}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 

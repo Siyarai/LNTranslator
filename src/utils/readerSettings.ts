@@ -12,6 +12,7 @@ export interface ReaderSettings {
   theme: ThemeName;
   fullScreen: boolean;
   horizontalPadding: number;
+  maxContentWidth: number;
   autoPrefetchEnabled: boolean;
   prefetchCount: number;
 }
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   theme: 'Dark',
   fullScreen: false,
   horizontalPadding: 20,
+  maxContentWidth: 0,
   autoPrefetchEnabled: true,
   prefetchCount: 2,
 };

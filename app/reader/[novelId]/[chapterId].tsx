@@ -47,6 +47,7 @@ import {
   saveReaderSettings,
 } from '../../../src/utils/readerSettings';
 import { buildChapterSourceUrl } from '../../../src/utils/sourceUrl';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const COLORS = {
   background: '#1A1A2E',
@@ -477,6 +478,15 @@ export default function ReaderScreen() {
     return unsub;
   }, []);
 
+  // Hide Android nav bar while in reader; restore on leave
+  useEffect(() => {
+    NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+    return () => {
+      NavigationBar.setVisibilityAsync('visible').catch(() => {});
+    };
+  }, []);
+
   // Cleanup timers and queue subscriptions on unmount
   useEffect(() => {
     return () => {
@@ -649,10 +659,7 @@ export default function ReaderScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.scrollView}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingHorizontal: settings.horizontalPadding },
-          ]}
+          contentContainerStyle={styles.scrollContent}
           scrollEventThrottle={250}
           onScroll={handleScroll}
           onContentSizeChange={handleContentSizeChange}
@@ -672,24 +679,35 @@ export default function ReaderScreen() {
             touchStartY.current = null;
           }}
         >
-          {/* Chapter Title */}
-          <Text style={readerTitleStyle}>{chapter?.name}</Text>
+          <View
+            style={[
+              styles.contentWrapper,
+              { paddingHorizontal: settings.horizontalPadding },
+              settings.maxContentWidth > 0 && {
+                maxWidth: settings.maxContentWidth,
+                alignSelf: 'center' as const,
+              },
+            ]}
+          >
+            {/* Chapter Title */}
+            <Text style={readerTitleStyle}>{chapter?.name}</Text>
 
-          {/* Chapter Text or No-Content UI */}
-          {displayText ? (
-            <Text style={readerTextStyle}>{displayText}</Text>
-          ) : (
-            <NoContentCard
-              chapter={chapter}
-              novel={novel}
-              sourceUrl={sourceUrl}
-              onOpenSource={handleOpenSource}
-              openingUrl={openingUrl}
-            />
-          )}
+            {/* Chapter Text or No-Content UI */}
+            {displayText ? (
+              <Text style={readerTextStyle}>{displayText}</Text>
+            ) : (
+              <NoContentCard
+                chapter={chapter}
+                novel={novel}
+                sourceUrl={sourceUrl}
+                onOpenSource={handleOpenSource}
+                openingUrl={openingUrl}
+              />
+            )}
 
-          {/* Bottom spacing */}
-          <View style={{ height: 100 }} />
+            {/* Bottom spacing */}
+            <View style={{ height: 100 }} />
+          </View>
         </ScrollView>
 
         {/* Bottom bar */}
@@ -1119,7 +1137,7 @@ function SettingsModal({
                   onPress={() =>
                     onUpdate(
                       'horizontalPadding',
-                      Math.max(12, settings.horizontalPadding - 2)
+                      Math.max(12, settings.horizontalPadding - 4)
                     )
                   }
                 >
@@ -1130,7 +1148,7 @@ function SettingsModal({
                     style={[
                       modalStyles.stepperFill,
                       {
-                        width: `${((settings.horizontalPadding - 12) / (36 - 12)) * 100}%`,
+                        width: `${((settings.horizontalPadding - 12) / (120 - 12)) * 100}%`,
                       },
                     ]}
                   />
@@ -1140,12 +1158,40 @@ function SettingsModal({
                   onPress={() =>
                     onUpdate(
                       'horizontalPadding',
-                      Math.min(36, settings.horizontalPadding + 2)
+                      Math.min(120, settings.horizontalPadding + 4)
                     )
                   }
                 >
                   <Text style={modalStyles.stepperBtnText}>+</Text>
                 </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* ── Content Width ── */}
+            <View style={modalStyles.section}>
+              <Text style={modalStyles.label}>Content Width</Text>
+              <View style={[modalStyles.chipRow, { marginBottom: 8 }]}>
+                <TouchableOpacity
+                  style={[modalStyles.chip, settings.maxContentWidth === 0 && modalStyles.chipActive]}
+                  onPress={() => onUpdate('maxContentWidth', 0)}
+                >
+                  <Text style={[modalStyles.chipText, settings.maxContentWidth === 0 && modalStyles.chipTextActive]}>
+                    Sınırsız
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={modalStyles.chipRow}>
+                {([600, 700, 800, 900] as const).map((w) => (
+                  <TouchableOpacity
+                    key={w}
+                    style={[modalStyles.chip, settings.maxContentWidth === w && modalStyles.chipActive]}
+                    onPress={() => onUpdate('maxContentWidth', w)}
+                  >
+                    <Text style={[modalStyles.chipText, settings.maxContentWidth === w && modalStyles.chipTextActive]}>
+                      {w}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
 
@@ -1415,8 +1461,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
     paddingTop: 16,
+    paddingBottom: 0,
+  },
+  contentWrapper: {
+    width: '100%',
+    paddingBottom: 0,
   },
   // ── No-content card ──
   noContentBox: {
