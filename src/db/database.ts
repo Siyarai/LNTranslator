@@ -119,6 +119,17 @@ export function getDbInstance(): SQLite.SQLiteDatabase {
   return db;
 }
 
+export async function checkpointDatabase(): Promise<void> {
+  if (!db) return;
+  await db.execAsync('PRAGMA wal_checkpoint(TRUNCATE)');
+}
+
+export async function closeDatabase(): Promise<void> {
+  if (!db) return;
+  await db.closeAsync();
+  db = null;
+}
+
 // ─── Novel CRUD ───────────────────────────────────────────────
 
 export async function insertNovel(

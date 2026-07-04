@@ -14,6 +14,11 @@ import {
 } from 'react-native';
 import { clearDatabase, deleteNovel, getAllNovels } from '../src/db/database';
 import { importBackup } from '../src/services/backupService';
+import {
+  exportBackup,
+  shareBackup,
+  importBackup as restoreFromZip,
+} from '../src/services/backupRestore';
 import ReaderSettingsPanel from '../src/components/ReaderSettingsPanel';
 import type { Novel } from '../src/types/novel';
 
@@ -414,6 +419,55 @@ function SettingsModal({
   onClearDatabase: () => void;
 }) {
   const [readerOpen, setReaderOpen] = useState(false);
+  const [backupProgress, setBackupProgress] = useState('');
+  const [restoreProgress, setRestoreProgress] = useState('');
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleExport = async () => {
+    setIsBusy(true);
+    setBackupProgress('Hazırlanıyor…');
+    try {
+      const zipPath = await exportBackup((msg) => setBackupProgress(msg));
+      setBackupProgress('');
+      await shareBackup(zipPath);
+    } catch (err: any) {
+      Alert.alert('Hata', err.message || 'Yedek alınamadı.');
+    } finally {
+      setIsBusy(false);
+      setBackupProgress('');
+    }
+  };
+
+  const handleImport = () => {
+    Alert.alert(
+      'Yedekten Geri Yükle',
+      'Mevcut tüm veriler silinecek ve seçilen yedek yüklenecek. Devam edilsin mi?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { text: 'Devam', style: 'destructive', onPress: doRestore },
+      ]
+    );
+  };
+
+  const doRestore = async () => {
+    setIsBusy(true);
+    setRestoreProgress('Dosya seçiliyor…');
+    try {
+      const counts = await restoreFromZip((msg) => setRestoreProgress(msg));
+      setRestoreProgress('');
+      Alert.alert(
+        'Geri Yükleme Tamam',
+        `${counts.novels} novel, ${counts.chapters} bölüm, ${counts.characters} karakter geri yüklendi.\n\nDeğişikliklerin geçerli olması için uygulamayı yeniden başlatın.`
+      );
+    } catch (err: any) {
+      if (err.message !== 'FILE_PICKER_CANCELLED') {
+        Alert.alert('Hata', err.message || 'Geri yükleme başarısız.');
+      }
+    } finally {
+      setIsBusy(false);
+      setRestoreProgress('');
+    }
+  };
 
   return (
     <Modal
@@ -427,7 +481,7 @@ function SettingsModal({
           {/* Header */}
           <View style={m.header}>
             <Text style={m.headerTitle}>Daha Fazla</Text>
-            <TouchableOpacity onPress={onClose} style={m.closeBtn}>
+            <TouchableOpacity onPress={onClose} style={m.closeBtn} disabled={isBusy}>
               <Text style={m.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -462,6 +516,51 @@ function SettingsModal({
                   <ReaderSettingsPanel />
                 </View>
               )}
+            </View>
+
+            {/* ── Backup ── */}
+            <View style={m.section}>
+              <Text style={m.sectionTitle}>Yedek</Text>
+
+              <TouchableOpacity
+                style={[m.settingsRow, isBusy && m.rowDisabled]}
+                onPress={handleExport}
+                activeOpacity={0.7}
+                disabled={isBusy}
+              >
+                <Text style={m.settingsRowIcon}>📦</Text>
+                <View style={m.settingsRowInfo}>
+                  <Text style={m.settingsRowLabel}>Verilerimi Yedekle</Text>
+                  <Text style={m.settingsRowDesc}>
+                    {backupProgress || 'Novel, bölüm, glossary ve karakterleri dışa aktar'}
+                  </Text>
+                </View>
+                {backupProgress ? (
+                  <ActivityIndicator size="small" color={C.primary} />
+                ) : (
+                  <Text style={m.settingsRowChevron}>›</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[m.settingsRow, m.settingsRowMt, isBusy && m.rowDisabled]}
+                onPress={handleImport}
+                activeOpacity={0.7}
+                disabled={isBusy}
+              >
+                <Text style={m.settingsRowIcon}>📥</Text>
+                <View style={m.settingsRowInfo}>
+                  <Text style={m.settingsRowLabel}>Yedekten Geri Yükle</Text>
+                  <Text style={m.settingsRowDesc}>
+                    {restoreProgress || 'Mevcut veriler silinir ve yedek yüklenir'}
+                  </Text>
+                </View>
+                {restoreProgress ? (
+                  <ActivityIndicator size="small" color={C.primary} />
+                ) : (
+                  <Text style={m.settingsRowChevron}>›</Text>
+                )}
+              </TouchableOpacity>
             </View>
 
             {/* ── Data ── */}
@@ -830,6 +929,12 @@ const m = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     padding: 16,
+  },
+  settingsRowMt: {
+    marginTop: 8,
+  },
+  rowDisabled: {
+    opacity: 0.45,
   },
 
   // ── Danger ──
